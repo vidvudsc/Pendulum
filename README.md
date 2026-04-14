@@ -2,21 +2,13 @@
 
 A real-time pendulum balancing system trained with Proximal Policy Optimization (PPO). Watch a neural network learn to swing up and balance a cart-pole from scratch, right in your browser.
 
-![Demo](screenshots/demo.png)
-
 ---
 
-## Screenshots
+![Demo](screenshots/demo.png)
 
-<!-- Add your screenshots to the screenshots/ folder and update the paths below -->
+![Training](screenshots/training.png)
 
-| Training in progress | Watch Mode |
-|---|---|
-| ![Training](screenshots/training.png) | ![Watch](screenshots/watch.png) |
-
-| Disturbance recovery | Model picker |
-|---|---|
-| ![Disturbance](screenshots/disturbance.png) | ![Picker](screenshots/picker.png) |
+![Watch](screenshots/watch.png)
 
 ---
 
@@ -61,35 +53,3 @@ python train.py
 ```
 
 Then open `index.html` in your browser (just double-click it or use a local server). The frontend auto-connects to `ws://localhost:8765`.
-
----
-
-## Controls
-
-| Input | Action |
-|---|---|
-| `←` / `→` arrow keys | Move cart (manual mode) |
-| `R` | Restart episode |
-| Click + drag on canvas | Apply disturbance (watch mode only) |
-| Mobile buttons | Move cart on touchscreen |
-
----
-
-## Project structure
-
-```
-pendulum/
-├── train.py          # PPO training server + physics + WebSocket API
-├── index.html        # Browser UI — canvas rendering + controls
-├── requirements.txt  # Python dependencies
-├── models/           # Saved model checkpoints (.pth)
-└── screenshots/      # Add your screenshots here
-```
-
----
-
-## Tech
-
-- Python — `torch`, `websockets`, `numpy`, `asyncio`
-- Browser — vanilla JS, Canvas API, Tailwind CSS
-- Algorithm — PPO (Proximal Policy Optimization) with GAE, minibatch updates, parallel environments
