@@ -1,0 +1,1346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pendulum AI Training</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            overflow: hidden;
+            background-color: #09090b;
+            color: #f4f4f5;
+        }
+
+        .glass-panel {
+            background: rgba(24, 24, 27, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-left: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .toggle-bg {
+            background-color: #27272a;
+            position: relative;
+            border-radius: 9999px;
+            padding: 4px;
+            display: flex;
+            cursor: pointer;
+        }
+        
+        .toggle-indicator {
+            position: absolute;
+            height: calc(100% - 8px);
+            width: calc(50% - 4px);
+            background-color: #3f3f46;
+            border-radius: 9999px;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+
+        .toggle-option {
+            flex: 1;
+            text-align: center;
+            z-index: 10;
+            font-size: 0.875rem;
+            font-weight: 500;
+            padding: 6px 0;
+            transition: color 0.2s;
+            color: #a1a1aa;
+        }
+
+        .toggle-option.active {
+            color: #fff;
+        }
+
+        .grid-bg {
+            background-image: 
+                linear-gradient(to right, rgba(255,255,255,0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+        }
+
+        /* Custom slider styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 12px;
+            width: 12px;
+            border-radius: 50%;
+            background: #6366f1;
+            cursor: pointer;
+            margin-top: -5px;
+        }
+        
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 2px;
+            cursor: pointer;
+            background: #3f3f46;
+            border-radius: 1px;
+        }
+    </style>
+</head>
+<body class="flex h-screen w-full antialiased selection:bg-indigo-500/30">
+
+    <!-- Model picker modal -->
+    <div id="modelPickerOverlay" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center">
+        <div class="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-96 max-h-[70vh] flex flex-col">
+            <div class="p-4 border-b border-zinc-800 flex items-center justify-between">
+                <span class="text-sm font-semibold text-zinc-100">Load Model</span>
+                <button id="modelPickerClose" class="text-zinc-500 hover:text-zinc-300 transition-colors">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div id="modelPickerList" class="overflow-y-auto flex-grow p-2 space-y-1">
+                <div class="text-zinc-500 text-xs text-center py-6">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Canvas Area -->
+    <div class="flex-grow relative grid-bg" id="canvas-container">
+        <canvas id="simCanvas" class="absolute inset-0 w-full h-full"></canvas>
+        <div id="dragHint" class="absolute bottom-4 left-1/2 -translate-x-1/2 text-zinc-500 text-[11px] pointer-events-none hidden flex items-center gap-2">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            drag to disturb
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+        </div>
+        
+        <!-- Visual offset indicator overlay -->
+        <div id="offsetIndicator" class="absolute top-4 left-1/2 -translate-x-1/2 text-zinc-500 text-xs hidden">
+            <span id="offsetText">Center offset: 0.00m</span>
+        </div>
+        
+        <!-- Mobile controls -->
+        <div class="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-4 md:hidden z-20">
+            <button id="btnLeft" class="w-16 h-16 rounded-full bg-zinc-800/80 backdrop-blur border border-zinc-700 flex items-center justify-center active:bg-zinc-700 transition">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <button id="btnRight" class="w-16 h-16 rounded-full bg-zinc-800/80 backdrop-blur border border-zinc-700 flex items-center justify-center active:bg-zinc-700 transition">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+        </div>
+
+        <!-- Status overlay (training or watch mode) -->
+        <div id="trainingOverlay" class="absolute top-4 left-4 bg-zinc-900/80 backdrop-blur px-4 py-2 rounded-lg border border-zinc-700 hidden">
+            <div class="flex items-center gap-2">
+                <div id="overlayDot" class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                <span class="text-xs text-zinc-300" id="overlayTitle">Training Active</span>
+            </div>
+            <div class="text-[10px] text-zinc-500 mt-1" id="overlaySubtitle">Gen <span id="overlayGen">0</span></div>
+        </div>
+    </div>
+
+    <!-- Right Sidebar -->
+    <div class="w-80 flex-shrink-0 glass-panel flex flex-col z-10 shadow-2xl" id="sidebar">
+        <!-- Header -->
+        <div class="p-6 border-b border-zinc-800/50">
+            <div class="flex items-center gap-3 mb-1">
+                <div class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
+                <h1 class="text-lg font-semibold tracking-tight text-zinc-100">Dynamics Lab</h1>
+            </div>
+            <p class="text-xs text-zinc-400">AI-Powered Pendulum Control</p>
+        </div>
+
+        <div class="p-6 flex flex-col gap-6 flex-grow overflow-y-auto">
+            
+            <!-- Configuration -->
+            <div class="space-y-3">
+                <label class="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Configuration</label>
+                <div class="toggle-bg" id="modeToggle">
+                    <div class="toggle-indicator" id="toggleIndicator"></div>
+                    <div class="toggle-option active" data-mode="single">Single Arm</div>
+                    <div class="toggle-option" data-mode="double">Double Arm</div>
+                </div>
+            </div>
+
+            <!-- Action -->
+            <button id="btnReset" class="w-full py-2.5 px-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm font-medium rounded-lg transition-colors border border-zinc-700 flex justify-center items-center gap-2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                Reset System
+            </button>
+
+            <!-- Telemetry -->
+            <div class="space-y-4">
+                <label class="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Telemetry</label>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="bg-zinc-900/40 p-3 rounded-lg border border-zinc-800/30">
+                        <div class="text-[10px] text-zinc-500 mb-1">CART POS (m)</div>
+                        <div class="mono text-sm text-zinc-200" id="statPos">0.00</div>
+                    </div>
+                    <div class="bg-zinc-900/40 p-3 rounded-lg border border-zinc-800/30">
+                        <div class="text-[10px] text-zinc-500 mb-1">CART VEL (m/s)</div>
+                        <div class="mono text-sm text-zinc-200" id="statVel">0.00</div>
+                    </div>
+                    <div class="bg-zinc-900/40 p-3 rounded-lg border border-zinc-800/30">
+                        <div class="text-[10px] text-indigo-400/70 mb-1">ANGLE (°)</div>
+                        <div class="mono text-sm text-indigo-300" id="statA1">0.0</div>
+                    </div>
+                    <div class="bg-zinc-900/40 p-3 rounded-lg border border-zinc-800/30" id="statA2Container" style="opacity: 0;">
+                        <div class="text-[10px] text-pink-400/70 mb-1">ARM 2 (°)</div>
+                        <div class="mono text-sm text-pink-300" id="statA2">0.0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Training Panel -->
+            <div class="space-y-4 mt-4 border-t border-zinc-800/50 pt-6">
+                <label class="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex justify-between items-center">
+                    Parallel AI Training
+                    <span id="aiStatus" class="flex items-center gap-1 text-zinc-500 normal-case tracking-normal"><div class="w-1.5 h-1.5 rounded-full bg-zinc-500"></div>Offline</span>
+                </label>
+
+                <div class="bg-zinc-900/50 rounded-lg p-4 border border-zinc-800/50 space-y-4">
+                    <!-- Status & Speed -->
+                    <div class="space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-zinc-400">Server</span>
+                            <button id="btnConnect" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded transition-colors opacity-50 hover:opacity-100" title="Auto-connecting...">
+                                Auto
+                            </button>
+                        </div>
+                        
+                        <div>
+                            <label class="text-[10px] text-zinc-500 flex justify-between mb-1">
+                                Training Speed
+                                <span id="speedValue" class="text-zinc-300">50x</span>
+                            </label>
+                            <input type="range" id="speedSlider" min="10" max="100" step="10" value="50" class="w-full">
+                        </div>
+                    </div>
+
+                    <!-- Starting Position Config -->
+                    <div class="pt-3 border-t border-zinc-800/30">
+                        <span class="text-[10px] text-zinc-500 block mb-2">Starting Position</span>
+                        <div class="flex gap-2">
+                            <button id="btnStartDown" class="flex-1 py-1.5 bg-emerald-600 text-white text-[10px] font-medium rounded transition-colors">
+                                Hanging Down
+                            </button>
+                            <button id="btnStartUp" class="flex-1 py-1.5 bg-zinc-800 text-zinc-400 text-[10px] font-medium rounded transition-colors hover:bg-zinc-700">
+                                Near Upright
+                            </button>
+                        </div>
+                        <div class="text-[9px] text-zinc-600 mt-1">Down = harder (learn to flip)</div>
+                        
+                        <!-- Disturbance Toggle -->
+                        <div class="mt-3">
+                            <button id="btnDisturbance" class="w-full py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-[10px] font-medium rounded transition-colors">
+                                Disturbance: OFF
+                            </button>
+                            <div class="text-[9px] text-zinc-600 mt-1">Random impulses during training</div>
+                        </div>
+                    </div>
+
+                    <!-- Training Controls -->
+                    <div id="aiControlsPanel" class="pt-3 border-t border-zinc-800/30 opacity-50 pointer-events-none">
+                        <button id="btnStartStop" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded transition-colors flex items-center justify-center gap-2">
+                            <svg id="playIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                            <svg id="stopIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="hidden"><rect x="6" y="6" width="12" height="12"/></svg>
+                            <span id="startStopText">Start Training</span>
+                        </button>
+                    </div>
+
+                    <!-- Training Stats -->
+                    <div id="aiStatsPanel" class="space-y-2 pt-2 opacity-50">
+
+                        <!-- Progress counters -->
+                        <div class="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider pt-1">Progress</div>
+                        <div class="grid grid-cols-3 gap-1.5">
+                            <div class="bg-zinc-900/40 p-2 rounded border border-zinc-800/30 col-span-1">
+                                <div class="text-[9px] text-zinc-500">GENERATION</div>
+                                <div class="mono text-xs text-indigo-300" id="statGeneration">0</div>
+                                <div class="text-[8px] text-zinc-600 mt-0.5">PPO updates</div>
+                            </div>
+                            <div class="bg-zinc-900/40 p-2 rounded border border-zinc-800/30 col-span-1">
+                                <div class="text-[9px] text-zinc-500">EPISODES</div>
+                                <div class="mono text-xs text-violet-300" id="statEpisodes">0</div>
+                                <div class="text-[8px] text-zinc-600 mt-0.5">total runs</div>
+                            </div>
+                            <div class="bg-zinc-900/40 p-2 rounded border border-zinc-800/30 col-span-1">
+                                <div class="text-[9px] text-zinc-500">STEPS</div>
+                                <div class="mono text-xs text-zinc-300" id="statSteps">0</div>
+                                <div class="text-[8px] text-zinc-600 mt-0.5">env steps</div>
+                            </div>
+                        </div>
+
+                        <!-- Reward -->
+                        <div class="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider pt-1">Reward</div>
+                        <div class="grid grid-cols-2 gap-1.5">
+                            <div class="bg-zinc-900/40 p-2 rounded border border-zinc-800/30">
+                                <div class="text-[9px] text-zinc-500">AVG REWARD</div>
+                                <div class="mono text-xs text-emerald-300" id="statAvgReward">0.0</div>
+                                <div class="text-[8px] text-zinc-600 mt-0.5">this gen</div>
+                            </div>
+                            <div class="bg-zinc-900/40 p-2 rounded border border-zinc-800/30">
+                                <div class="text-[9px] text-zinc-500">AVG EP LEN</div>
+                                <div class="mono text-xs text-emerald-300" id="statEpLen">0.0s</div>
+                                <div class="text-[8px] text-zinc-600 mt-0.5">seconds alive</div>
+                            </div>
+                        </div>
+
+                        <!-- Loss -->
+                        <div class="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider pt-1">Network</div>
+                        <div class="grid grid-cols-2 gap-1.5">
+                            <div class="bg-zinc-900/40 p-2 rounded border border-zinc-800/30">
+                                <div class="text-[9px] text-zinc-500">ACTOR LOSS</div>
+                                <div class="mono text-xs text-amber-300" id="statActorLoss">0.0</div>
+                                <div class="text-[8px] text-zinc-600 mt-0.5">policy gradient</div>
+                            </div>
+                            <div class="bg-zinc-900/40 p-2 rounded border border-zinc-800/30">
+                                <div class="text-[9px] text-zinc-500">CRITIC LOSS</div>
+                                <div class="mono text-xs text-amber-300" id="statCriticLoss">0.0</div>
+                                <div class="text-[8px] text-zinc-600 mt-0.5">value error</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Save/Load -->
+                    <div class="flex gap-2 pt-2 border-t border-zinc-800/30">
+                        <button id="btnSaveModel" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-medium rounded transition-colors">
+                            Save Model
+                        </button>
+                        <button id="btnLoadModel" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-medium rounded transition-colors">
+                            Load Model
+                        </button>
+                    </div>
+
+                    <!-- Loss Chart -->
+                    <div class="pt-3 border-t border-zinc-800/30">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-[10px] text-zinc-500" id="lossLabel">Actor Loss</span>
+                            <span class="mono text-[10px] text-zinc-400" id="currentLoss">--</span>
+                        </div>
+                        <canvas id="lossChart" class="w-full rounded bg-zinc-900/30 border border-zinc-800/30" style="height:80px"></canvas>
+                    </div>
+
+                    <!-- Success Metrics -->
+                    <div class="pt-3 border-t border-zinc-800/30 space-y-2">
+                        <span class="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider">Balance Quality</span>
+
+                        <!-- Centered Time -->
+                        <div class="bg-zinc-900/40 p-2 rounded border border-zinc-800/30">
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <span class="text-[10px] text-zinc-400">Centered</span>
+                                    <span class="text-[9px] text-zinc-600 ml-1">|pos| &lt; 0.5m</span>
+                                </div>
+                                <span class="mono text-xs text-emerald-400" id="statCenteredTime">0.0%</span>
+                            </div>
+                            <div class="w-full bg-zinc-800 h-1.5 rounded-full mt-1.5 overflow-hidden">
+                                <div id="centeredBar" class="bg-emerald-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+                            </div>
+                        </div>
+
+                        <!-- Upright Time -->
+                        <div class="bg-zinc-900/40 p-2 rounded border border-zinc-800/30">
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <span class="text-[10px] text-zinc-400">Upright</span>
+                                    <span class="text-[9px] text-zinc-600 ml-1">|angle| &lt; 15°</span>
+                                </div>
+                                <span class="mono text-xs text-indigo-400" id="statUprightTime">0.0%</span>
+                            </div>
+                            <div class="w-full bg-zinc-800 h-1.5 rounded-full mt-1.5 overflow-hidden">
+                                <div id="uprightBar" class="bg-indigo-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+                            </div>
+                        </div>
+
+                        <!-- Perfect Balance -->
+                        <div class="bg-zinc-900/40 p-2 rounded border border-zinc-800/30">
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <span class="text-[10px] text-zinc-400">Perfect</span>
+                                    <span class="text-[9px] text-zinc-600 ml-1">centered &amp; upright</span>
+                                </div>
+                                <span class="mono text-xs text-amber-400" id="statPerfectRate">0%</span>
+                            </div>
+                            <div class="w-full bg-zinc-800 h-1.5 rounded-full mt-1.5 overflow-hidden">
+                                <div id="perfectBar" class="bg-amber-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+        
+        <div class="p-4 border-t border-zinc-800/50 text-center">
+            <span class="text-[10px] text-zinc-600">Parallel RL Training v2.0</span>
+        </div>
+    </div>
+
+    <script>
+        // ========== PHYSICS & RENDERING ==========
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvas-container');
+
+        let width, height, originX, originY;
+        const PIXELS_PER_METER = 80;
+        const GRAVITY = 9.81;
+        const FIXED_DT = 1 / 120;
+        const CONSTRAINT_ITERATIONS = 50;
+        
+        // Trainer constants - must match train.py
+        const TRAINER_DT = 0.02;
+        const TRAINER_ARM_LENGTH = 1.5;
+        let demoState = null;
+        
+        let points = [];
+        let constraints = [];
+        let trails = [[], []];
+        let inputForce = 0;
+        const FORCE_MAGNITUDE = 60;
+
+        // ===== DRAG-TO-DISTURB =====
+        // Works in AI demo mode (training or loaded model).
+        // Click anywhere on canvas, drag left/right, release to fire an impulse.
+        // Further drag = stronger hit. Max drag ~200px = full force.
+        const MAX_DRAG_PX = 200;
+        let drag = null; // { startX, currentX } while dragging
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (!demoState || isTraining) return; // only in watch mode (loaded model, not training)
+            drag = { startX: e.clientX, currentX: e.clientX };
+        });
+        canvas.addEventListener('mousemove', (e) => {
+            if (drag) drag.currentX = e.clientX;
+        });
+        canvas.addEventListener('mouseup', fireImpulse);
+        canvas.addEventListener('mouseleave', fireImpulse);
+
+        canvas.addEventListener('touchstart', (e) => {
+            if (!demoState || isTraining) return;
+            e.preventDefault();
+            drag = { startX: e.touches[0].clientX, currentX: e.touches[0].clientX };
+        }, { passive: false });
+        canvas.addEventListener('touchmove', (e) => {
+            if (drag) { e.preventDefault(); drag.currentX = e.touches[0].clientX; }
+        }, { passive: false });
+        canvas.addEventListener('touchend', fireImpulse);
+
+        function fireImpulse() {
+            if (!drag) return;
+            const dx = drag.currentX - drag.startX;
+            drag = null;
+            if (Math.abs(dx) < 5) return; // ignore tiny taps
+            const force = Math.max(-1.0, Math.min(1.0, dx / MAX_DRAG_PX));
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'command', action: 'apply_impulse', force }));
+            }
+        }
+
+        function resize() {
+            width = container.clientWidth;
+            height = container.clientHeight;
+            canvas.width = width;
+            canvas.height = height;
+            originX = width / 2;
+            originY = height * 0.4;
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+
+        function initNodes() {
+            points = [];
+            constraints = [];
+            trails = [[], []];
+            points.push({ x: 0, y: 0, old_x: 0, old_y: 0, mass: 10, isCart: true });
+            points.push({ x: 1.4, y: -0.5, old_x: 1.4, old_y: -0.5, mass: 1, isCart: false });
+            constraints.push({ p0: 0, p1: 1, length: 1.5 });
+        }
+
+        function resetSimulation() {
+            inputForce = 0;
+            initNodes();
+        }
+
+        // Input handling - always active unless watching AI training
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'KeyR' && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'command', action: 'restart_episode' }));
+                return;
+            }
+            if (isTraining) return; // Don't accept input when watching AI training
+            if (e.code === 'ArrowLeft') inputForce = -FORCE_MAGNITUDE;
+            if (e.code === 'ArrowRight') inputForce = FORCE_MAGNITUDE;
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'ArrowLeft' && inputForce < 0) inputForce = 0;
+            if (e.code === 'ArrowRight' && inputForce > 0) inputForce = 0;
+        });
+
+        // Mobile controls
+        const btnLeft = document.getElementById('btnLeft');
+        const btnRight = document.getElementById('btnRight');
+        const applyLeft = () => { if (!isTraining) inputForce = -FORCE_MAGNITUDE; };
+        const applyRight = () => { if (!isTraining) inputForce = FORCE_MAGNITUDE; };
+        const release = () => inputForce = 0;
+
+        btnLeft.addEventListener('mousedown', applyLeft);
+        btnLeft.addEventListener('touchstart', (e) => { e.preventDefault(); applyLeft(); });
+        btnLeft.addEventListener('mouseup', release);
+        btnLeft.addEventListener('mouseleave', release);
+        btnLeft.addEventListener('touchend', release);
+
+        btnRight.addEventListener('mousedown', applyRight);
+        btnRight.addEventListener('touchstart', (e) => { e.preventDefault(); applyRight(); });
+        btnRight.addEventListener('mouseup', release);
+        btnRight.addEventListener('mouseleave', release);
+        btnRight.addEventListener('touchend', release);
+
+        function stepPhysics(dt) {
+            // Server drives simulation when we have demoState (training OR watching loaded model)
+            // Browser physics only runs when no demoState available
+            if (demoState) {
+                return;
+            }
+            
+            let cart = points[0];
+            cart.x += inputForce * dt * dt;
+
+            const globalDamping = 0.999;
+            const cartFriction = 0.98;
+
+            for (let i = 0; i < points.length; i++) {
+                let p = points[i];
+                let vx = (p.x - p.old_x);
+                let vy = (p.y - p.old_y);
+                p.old_x = p.x;
+                p.old_y = p.y;
+                let damping = p.isCart ? cartFriction : globalDamping;
+                p.x += vx * damping;
+                p.y += vy * damping;
+                if (!p.isCart) p.y += GRAVITY * dt * dt;
+            }
+
+            for (let iter = 0; iter < CONSTRAINT_ITERATIONS; iter++) {
+                cart.y = 0;
+                let maxCartX = (width / 2 - 20) / PIXELS_PER_METER;
+                if (cart.x > maxCartX) {
+                    cart.x = maxCartX;
+                    cart.old_x = cart.x + (cart.old_x - cart.x) * 0.5;
+                }
+                if (cart.x < -maxCartX) {
+                    cart.x = -maxCartX;
+                    cart.old_x = cart.x + (cart.old_x - cart.x) * 0.5;
+                }
+
+                for (let c of constraints) {
+                    let p0 = points[c.p0];
+                    let p1 = points[c.p1];
+                    let dx = p1.x - p0.x;
+                    let dy = p1.y - p0.y;
+                    let dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist === 0) continue;
+                    let diff = (dist - c.length) / dist;
+                    let invM0 = 1 / p0.mass;
+                    let invM1 = 1 / p1.mass;
+                    let sumInvM = invM0 + invM1;
+                    let pushX = dx * diff / sumInvM;
+                    let pushY = dy * diff / sumInvM;
+                    p0.x += pushX * invM0;
+                    p0.y += pushY * invM0;
+                    p1.x -= pushX * invM1;
+                    p1.y -= pushY * invM1;
+                }
+            }
+            
+            cart.y = 0;
+            cart.old_y = 0;
+
+            if (points[1]) trails[0].push({x: points[1].x, y: points[1].y});
+            if (trails[0].length > 20) trails[0].shift();
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, width, height);
+            if (points.length === 0) return;
+
+            const cart = points[0];
+            const cx = originX + cart.x * PIXELS_PER_METER;
+            const cy = originY;
+
+            // Draw vertical dotted center line to show offset
+            ctx.beginPath();
+            ctx.setLineDash([5, 5]); // Dotted line
+            ctx.moveTo(originX, cy - 200);
+            ctx.lineTo(originX, cy + 200);
+            ctx.strokeStyle = 'rgba(255, 99, 71, 0.6)'; // Tomato red, semi-transparent
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.setLineDash([]); // Reset to solid
+
+            // Draw line from center to cart to show offset distance
+            if (Math.abs(cart.x) > 0.1) {
+                ctx.beginPath();
+                ctx.moveTo(originX, cy);
+                ctx.lineTo(cx, cy);
+                ctx.strokeStyle = 'rgba(255, 99, 71, 0.8)';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                
+                // Draw offset distance text
+                ctx.fillStyle = 'rgba(255, 99, 71, 0.9)';
+                ctx.font = '12px Inter';
+                ctx.textAlign = 'center';
+                const midX = (originX + cx) / 2;
+                ctx.fillText(`${Math.abs(cart.x).toFixed(2)}m`, midX, cy - 10);
+            }
+
+            const railMargin = 20;
+            const railStartX = originX - (width / 2 - railMargin);
+            const railEndX = originX + (width / 2 - railMargin);
+
+            // Draw Rail
+            ctx.beginPath();
+            ctx.moveTo(railStartX, cy);
+            ctx.lineTo(railEndX, cy);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#3f3f46';
+            ctx.stroke();
+
+            // Rail notches
+            let notchStart = Math.ceil(railStartX / 40) * 40;
+            for(let i = notchStart; i <= railEndX; i += 40) {
+                ctx.beginPath();
+                ctx.moveTo(i, cy - 4);
+                ctx.lineTo(i, cy + 4);
+                ctx.strokeStyle = '#27272a';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+
+            // End boundaries
+            ctx.fillStyle = '#52525b';
+            ctx.beginPath();
+            ctx.arc(railStartX, cy, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(railEndX, cy, 8, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Trails - smooth bezier curve, fading opacity
+            if (trails[0].length >= 2) {
+                const t = trails[0];
+                const n = t.length;
+                for (let i = 1; i < n; i++) {
+                    const alpha = (i / n) * 0.5;
+                    ctx.beginPath();
+                    if (i === 1) {
+                        ctx.moveTo(originX + t[0].x * PIXELS_PER_METER, originY + t[0].y * PIXELS_PER_METER);
+                        ctx.lineTo(originX + t[1].x * PIXELS_PER_METER, originY + t[1].y * PIXELS_PER_METER);
+                    } else {
+                        const prev = t[i - 1];
+                        const curr = t[i];
+                        const mid = {
+                            x: (prev.x + curr.x) / 2,
+                            y: (prev.y + curr.y) / 2
+                        };
+                        ctx.moveTo(originX + t[i-1].x * PIXELS_PER_METER, originY + t[i-1].y * PIXELS_PER_METER);
+                        ctx.quadraticCurveTo(
+                            originX + prev.x * PIXELS_PER_METER, originY + prev.y * PIXELS_PER_METER,
+                            originX + mid.x * PIXELS_PER_METER, originY + mid.y * PIXELS_PER_METER
+                        );
+                    }
+                    ctx.strokeStyle = `rgba(99, 102, 241, ${alpha})`;
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+            }
+
+            // Arms
+            ctx.beginPath();
+            for (let c of constraints) {
+                let p0 = points[c.p0];
+                let p1 = points[c.p1];
+                ctx.moveTo(originX + p0.x * PIXELS_PER_METER, originY + p0.y * PIXELS_PER_METER);
+                ctx.lineTo(originX + p1.x * PIXELS_PER_METER, originY + p1.y * PIXELS_PER_METER);
+            }
+            ctx.strokeStyle = '#e4e4e7';
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+
+            // Cart
+            const cartW = 50;
+            const cartH = 20;
+            
+            if (inputForce !== 0) {
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = '#10b981';
+            } else {
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = 'rgba(0,0,0,0.5)';
+            }
+
+            ctx.fillStyle = '#27272a';
+            ctx.beginPath();
+            ctx.roundRect(cx - cartW/2, cy - cartH/2, cartW, cartH, 6);
+            ctx.fill();
+            
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#52525b';
+            ctx.beginPath();
+            ctx.roundRect(cx - cartW/2 + 2, cy - cartH/2 + 2, cartW - 4, cartH/2, 4);
+            ctx.fill();
+
+            ctx.fillStyle = '#18181b';
+            ctx.beginPath();
+            ctx.arc(cx - 15, cy + 10, 6, 0, Math.PI * 2);
+            ctx.arc(cx + 15, cy + 10, 6, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Bob
+            if (points.length > 1) {
+                const p = points[1];
+                const px = originX + p.x * PIXELS_PER_METER;
+                const py = originY + p.y * PIXELS_PER_METER;
+                
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = 'rgba(99, 102, 241, 0.6)';
+                ctx.fillStyle = '#6366f1';
+                ctx.beginPath();
+                ctx.arc(px, py, 12, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(px - 3, py - 3, 3, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Draw disturbance arrow if active
+                if (demoState && demoState.disturbanceForce !== 0) {
+                    const arrowLen = Math.abs(demoState.disturbanceForce) * 200;
+                    const arrowDir = demoState.disturbanceForce > 0 ? 1 : -1;
+                    const arrowColor = arrowDir > 0 ? 'rgba(239, 68, 68, 1.0)' : 'rgba(34, 197, 94, 1.0)';
+                    const glowColor = arrowDir > 0 ? 'rgba(239, 68, 68, 0.35)' : 'rgba(34, 197, 94, 0.35)';
+                    const tipX = px + arrowDir * (22 + arrowLen);
+
+                    // Glow halo
+                    ctx.shadowBlur = 18;
+                    ctx.shadowColor = arrowColor;
+
+                    // Shaft
+                    ctx.beginPath();
+                    ctx.moveTo(px + arrowDir * 22, py);
+                    ctx.lineTo(tipX, py);
+                    ctx.strokeStyle = arrowColor;
+                    ctx.lineWidth = 7;
+                    ctx.lineCap = 'round';
+                    ctx.stroke();
+
+                    // Arrowhead
+                    ctx.beginPath();
+                    ctx.moveTo(tipX, py);
+                    ctx.lineTo(tipX - arrowDir * 22, py - 14);
+                    ctx.lineTo(tipX - arrowDir * 22, py + 14);
+                    ctx.closePath();
+                    ctx.fillStyle = arrowColor;
+                    ctx.fill();
+
+                    ctx.shadowBlur = 0;
+                }
+            }
+            
+            ctx.shadowBlur = 0;
+
+            // Draw drag-to-disturb charge indicator — same style as red/green arrows
+            if (drag) {
+                const dx = drag.currentX - drag.startX;
+                const force = Math.max(-1.0, Math.min(1.0, dx / MAX_DRAG_PX));
+                if (Math.abs(dx) >= 5 && points.length > 0) {
+                    const cartScreenX = originX + (demoState ? demoState.cartPos : points[0].x) * PIXELS_PER_METER;
+                    const cartScreenY = originY;
+                    const arrowDir = force > 0 ? 1 : -1;
+                    const alpha = 0.4 + Math.abs(force) * 0.6;
+                    const arrowLen = Math.abs(force) * 200;
+                    const color = `rgba(251, 191, 36, ${alpha})`;
+                    const tipX = cartScreenX + arrowDir * (22 + arrowLen);
+
+                    ctx.shadowBlur = 18;
+                    ctx.shadowColor = `rgba(251,191,36,${alpha})`;
+
+                    // Shaft
+                    ctx.beginPath();
+                    ctx.moveTo(cartScreenX + arrowDir * 22, cartScreenY);
+                    ctx.lineTo(tipX, cartScreenY);
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 7;
+                    ctx.lineCap = 'round';
+                    ctx.stroke();
+
+                    // Arrowhead
+                    ctx.beginPath();
+                    ctx.moveTo(tipX, cartScreenY);
+                    ctx.lineTo(tipX - arrowDir * 22, cartScreenY - 14);
+                    ctx.lineTo(tipX - arrowDir * 22, cartScreenY + 14);
+                    ctx.closePath();
+                    ctx.fillStyle = color;
+                    ctx.fill();
+
+                    ctx.shadowBlur = 0;
+
+                    // Force % label above arrowhead
+                    ctx.fillStyle = `rgba(251,191,36,${alpha})`;
+                    ctx.font = 'bold 13px Inter';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`${Math.round(Math.abs(force) * 100)}%`, tipX - arrowDir * 11, cartScreenY - 20);
+                }
+            }
+        }
+
+        function updateTelemetry() {
+            // Use demo state when available (training OR watching loaded model)
+            if (demoState) {
+                document.getElementById('statPos').innerText = demoState.cartPos.toFixed(2);
+                document.getElementById('statVel').innerText = demoState.cartVel.toFixed(2);
+                
+                // Convert angle to degrees (-180 to 180)
+                let angleDeg = (demoState.angle * 180 / Math.PI);
+                // Normalize to -180 to 180 range
+                while (angleDeg > 180) angleDeg -= 360;
+                while (angleDeg < -180) angleDeg += 360;
+                document.getElementById('statA1').innerText = angleDeg.toFixed(1);
+                return;
+            }
+            
+            if (points.length === 0) return;
+            const cart = points[0];
+            document.getElementById('statPos').innerText = cart.x.toFixed(2);
+            const vel = (cart.x - cart.old_x) / FIXED_DT;
+            document.getElementById('statVel').innerText = vel.toFixed(2);
+            if (points[1]) {
+                const dx = points[1].x - cart.x;
+                const dy = points[1].y - cart.y;
+                let angle = Math.atan2(dx, -dy) * (180 / Math.PI);
+                document.getElementById('statA1').innerText = angle.toFixed(1);
+            }
+        }
+
+        let lastTime = 0;
+        let accumulator = 0;
+
+        function loop(time) {
+            if (lastTime) {
+                let frameTime = (time - lastTime) / 1000;
+                if (frameTime > 0.25) frameTime = 0.25;
+                accumulator += frameTime;
+                while (accumulator >= FIXED_DT) {
+                    stepPhysics(FIXED_DT);
+                    accumulator -= FIXED_DT;
+                }
+            }
+            lastTime = time;
+            draw();
+            updateTelemetry();
+            requestAnimationFrame(loop);
+        }
+
+        // ========== AI TRAINING WEBSOCKET ==========
+        let ws = null;
+        let isTraining = false;
+        let serverIdle = true;   // true = server has no model, browser uses manual physics
+        let trainingSpeed = 50;
+
+        // UI Elements
+        const btnConnect = document.getElementById('btnConnect');
+        const aiStatus = document.getElementById('aiStatus');
+        const aiControlsPanel = document.getElementById('aiControlsPanel');
+        const trainingOverlay = document.getElementById('trainingOverlay');
+        const btnStartStop = document.getElementById('btnStartStop');
+        const playIcon = document.getElementById('playIcon');
+        const stopIcon = document.getElementById('stopIcon');
+        const startStopText = document.getElementById('startStopText');
+
+        // Speed slider
+        const speedSlider = document.getElementById('speedSlider');
+        speedSlider.addEventListener('input', (e) => {
+            trainingSpeed = parseInt(e.target.value);
+            document.getElementById('speedValue').textContent = trainingSpeed + 'x';
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'config', data: { speed: trainingSpeed } }));
+            }
+        });
+
+        function connectWebSocket() {
+            if (ws && ws.readyState === WebSocket.OPEN) return;
+
+            ws = new WebSocket('ws://localhost:8765');
+
+            ws.onopen = () => {
+                aiStatus.innerHTML = '<div class="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>Connected';
+                aiStatus.classList.remove('text-zinc-500');
+                aiStatus.classList.add('text-emerald-500');
+                btnConnect.textContent = 'Disconnect';
+                btnConnect.classList.remove('bg-indigo-600', 'hover:bg-indigo-500');
+                btnConnect.classList.add('bg-zinc-600', 'hover:bg-zinc-500');
+                aiControlsPanel.classList.remove('opacity-50', 'pointer-events-none');
+                document.getElementById('aiStatsPanel').classList.remove('opacity-50');
+                
+                ws.send(JSON.stringify({ type: 'config', data: { speed: trainingSpeed } }));
+            };
+
+            ws.onclose = () => {
+                aiStatus.innerHTML = '<div class="w-1.5 h-1.5 rounded-full bg-zinc-500"></div>Offline';
+                aiStatus.classList.add('text-zinc-500');
+                aiStatus.classList.remove('text-emerald-500');
+                btnConnect.textContent = 'Connect';
+                btnConnect.classList.add('bg-indigo-600', 'hover:bg-indigo-500');
+                btnConnect.classList.remove('bg-zinc-600', 'hover:bg-zinc-500');
+                aiControlsPanel.classList.add('opacity-50', 'pointer-events-none');
+                document.getElementById('aiStatsPanel').classList.add('opacity-50');
+                trainingOverlay.classList.add('hidden');
+
+                // Reset to manual control
+                isTraining = false;
+                serverIdle = true;
+                demoState = null;
+                btnStartStop.classList.add('bg-emerald-600', 'hover:bg-emerald-500');
+                btnStartStop.classList.remove('bg-red-600', 'hover:bg-red-500');
+                playIcon.classList.remove('hidden');
+                stopIcon.classList.add('hidden');
+                startStopText.textContent = 'Start Training';
+
+                ws = null;
+                setTimeout(connectWebSocket, 2000);
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+
+                if (msg.type === 'server_mode') {
+                    serverIdle = msg.idle;
+                    if (serverIdle) {
+                        isTraining = false;
+                        demoState = null;
+                        trails = [[], []];
+                        trainingOverlay.classList.add('hidden');
+                        btnStartStop.classList.add('bg-emerald-600', 'hover:bg-emerald-500');
+                        btnStartStop.classList.remove('bg-red-600', 'hover:bg-red-500');
+                        playIcon.classList.remove('hidden');
+                        stopIcon.classList.add('hidden');
+                        startStopText.textContent = 'Start Training';
+                    } else if (msg.trainingActive) {
+                        // Reconnected while training was running — restore training UI
+                        isTraining = true;
+                        document.getElementById('overlayDot').className = 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse';
+                        document.getElementById('overlayTitle').textContent = 'Training Active';
+                        document.getElementById('overlaySubtitle').innerHTML = 'Gen <span id="overlayGen">' + (msg.generation || 0) + '</span>';
+                        trainingOverlay.classList.remove('hidden');
+                        btnStartStop.classList.remove('bg-emerald-600', 'hover:bg-emerald-500');
+                        btnStartStop.classList.add('bg-red-600', 'hover:bg-red-500');
+                        playIcon.classList.add('hidden');
+                        stopIcon.classList.remove('hidden');
+                        startStopText.textContent = 'Stop Training';
+                    } else if (msg.watchMode) {
+                        // Watch mode (model loaded) — stop training UI if it was running
+                        isTraining = false;
+                        btnStartStop.classList.add('bg-emerald-600', 'hover:bg-emerald-500');
+                        btnStartStop.classList.remove('bg-red-600', 'hover:bg-red-500');
+                        playIcon.classList.remove('hidden');
+                        stopIcon.classList.add('hidden');
+                        startStopText.textContent = 'Start Training';
+                        document.getElementById('overlayDot').className = 'w-2 h-2 rounded-full bg-indigo-400';
+                        document.getElementById('overlayTitle').textContent = 'Watch Mode';
+                        document.getElementById('overlaySubtitle').textContent = 'drag canvas to disturb';
+                        trainingOverlay.classList.remove('hidden');
+                    }
+                    const inWatchMode = !serverIdle && !isTraining;
+                    document.getElementById('dragHint').classList.toggle('hidden', !inWatchMode);
+                    canvas.style.cursor = inWatchMode ? 'ew-resize' : 'default';
+                    return;
+                }
+
+                if (msg.type === 'demo_state') {
+                    // Only accept demo frames when server has something real to show
+                    if (serverIdle) return;
+
+                    if (typeof msg.cartPos !== 'number' || typeof msg.angle !== 'number') {
+                        console.warn('Invalid demo_state data:', msg);
+                        return;
+                    }
+
+                    demoState = msg;
+
+                    if (points.length > 0) {
+                        if (msg.reset) trails[0] = [];
+
+                        points[0].x = msg.cartPos;
+                        points[0].old_x = msg.cartPos;
+                        points[0].y = 0;
+                        points[0].old_y = 0;
+
+                        const bobX = msg.cartPos + Math.sin(msg.angle) * TRAINER_ARM_LENGTH;
+                        const bobY = -Math.cos(msg.angle) * TRAINER_ARM_LENGTH;
+                        points[1].x = bobX;
+                        points[1].old_x = bobX;
+                        points[1].y = bobY;
+                        points[1].old_y = bobY;
+
+                        if (constraints[0]) constraints[0].length = TRAINER_ARM_LENGTH;
+
+                        trails[0].push({x: bobX, y: bobY});
+                        if (trails[0].length > 20) trails[0].shift();
+
+                        document.getElementById('overlayGen').textContent = msg.generation;
+                    }
+                } else if (msg.type === 'model_list') {
+                    if (msg.files.length === 0) {
+                        modelPickerList.innerHTML = '<div class="text-zinc-500 text-xs text-center py-6">No saved models found</div>';
+                    } else {
+                        modelPickerList.innerHTML = msg.files.map(f => `
+                            <button class="model-file-btn w-full text-left px-3 py-2.5 rounded-lg hover:bg-zinc-800 transition-colors group" data-file="${f}">
+                                <div class="text-xs text-zinc-200 font-medium group-hover:text-white">${f.replace('.pth','')}</div>
+                            </button>
+                        `).join('');
+                        modelPickerList.querySelectorAll('.model-file-btn').forEach(btn => {
+                            btn.addEventListener('click', () => {
+                                const filename = btn.dataset.file;
+                                ws.send(JSON.stringify({ type: 'command', action: 'load_model_file', filename }));
+                                modelPickerOverlay.classList.add('hidden');
+                            });
+                        });
+                    }
+                } else if (msg.type === 'stats') {
+                    updateStats(msg);
+                } else if (msg.type === 'notification') {
+                    showNotification(msg.message);
+                }
+            };
+        }
+
+        // Auto-connect on load
+        connectWebSocket();
+
+        // Manual connect/disconnect button
+        btnConnect.addEventListener('click', () => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.close();
+            } else {
+                connectWebSocket();
+            }
+        });
+
+        // Starting position toggle
+        const btnStartDown = document.getElementById('btnStartDown');
+        const btnStartUp = document.getElementById('btnStartUp');
+        
+        function setStartPosition(position) {
+            startPosition = position;
+            if (position === 'down') {
+                btnStartDown.classList.add('bg-emerald-600', 'text-white');
+                btnStartDown.classList.remove('bg-zinc-800', 'text-zinc-400');
+                btnStartUp.classList.add('bg-zinc-800', 'text-zinc-400');
+                btnStartUp.classList.remove('bg-emerald-600', 'text-white');
+            } else {
+                btnStartUp.classList.add('bg-emerald-600', 'text-white');
+                btnStartUp.classList.remove('bg-zinc-800', 'text-zinc-400');
+                btnStartDown.classList.add('bg-zinc-800', 'text-zinc-400');
+                btnStartDown.classList.remove('bg-emerald-600', 'text-white');
+            }
+            // Send to server
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'config', data: { startPosition: position } }));
+            }
+        }
+        
+        btnStartDown.addEventListener('click', () => setStartPosition('down'));
+        btnStartUp.addEventListener('click', () => setStartPosition('up'));
+
+        // Start/Stop toggle button
+        btnStartStop.addEventListener('click', () => {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+            if (!isTraining) {
+                // Reset charts and stats
+                lossHistory = [];
+                drawLossChart();
+                document.getElementById('currentLoss').textContent = '--';
+                document.getElementById('statAvgReward').textContent = '0.0';
+                document.getElementById('statActorLoss').textContent = '0.0';
+                document.getElementById('statCriticLoss').textContent = '0.0';
+                document.getElementById('statEpisodes').textContent = '0';
+                document.getElementById('statSteps').textContent = '0';
+                document.getElementById('statEpLen').textContent = '0.0s';
+                document.getElementById('statCenteredTime').textContent = '0.0%';
+                document.getElementById('statUprightTime').textContent = '0.0%';
+                document.getElementById('statPerfectRate').textContent = '0.0%';
+                document.getElementById('centeredBar').style.width = '0%';
+                document.getElementById('uprightBar').style.width = '0%';
+                document.getElementById('perfectBar').style.width = '0%';
+
+                // Server will become active — accept demo frames
+                serverIdle = false;
+                demoState = null;
+                trails = [[], []];
+                if (points.length === 0) initNodes();
+
+                ws.send(JSON.stringify({ type: 'command', action: 'start_training' }));
+                isTraining = true;
+                document.getElementById('overlayDot').className = 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse';
+                document.getElementById('overlayTitle').textContent = 'Training Active';
+                document.getElementById('overlaySubtitle').innerHTML = 'Gen <span id="overlayGen">0</span>';
+                trainingOverlay.classList.remove('hidden');
+                document.getElementById('dragHint').classList.add('hidden');
+                canvas.style.cursor = 'default';
+
+                btnStartStop.classList.remove('bg-emerald-600', 'hover:bg-emerald-500');
+                btnStartStop.classList.add('bg-red-600', 'hover:bg-red-500');
+                playIcon.classList.add('hidden');
+                stopIcon.classList.remove('hidden');
+                startStopText.textContent = 'Stop Training';
+            } else {
+                ws.send(JSON.stringify({ type: 'command', action: 'stop_training' }));
+                isTraining = false;
+                trainingOverlay.classList.add('hidden');
+
+                // Server will send server_mode idle if it has no loaded model,
+                // which will clear demoState. Until then, keep showing demo.
+                btnStartStop.classList.add('bg-emerald-600', 'hover:bg-emerald-500');
+                btnStartStop.classList.remove('bg-red-600', 'hover:bg-red-500');
+                playIcon.classList.remove('hidden');
+                stopIcon.classList.add('hidden');
+                startStopText.textContent = 'Start Training';
+            }
+        });
+
+        // Save model (just sends command, doesn't change view)
+        document.getElementById('btnSaveModel').addEventListener('click', () => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'command', action: 'save_model' }));
+            }
+        });
+
+        // Load model — open picker
+        const modelPickerOverlay = document.getElementById('modelPickerOverlay');
+        const modelPickerList = document.getElementById('modelPickerList');
+
+        document.getElementById('btnLoadModel').addEventListener('click', () => {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            modelPickerList.innerHTML = '<div class="text-zinc-500 text-xs text-center py-6">Loading...</div>';
+            modelPickerOverlay.classList.remove('hidden');
+            ws.send(JSON.stringify({ type: 'command', action: 'list_models' }));
+        });
+
+        document.getElementById('modelPickerClose').addEventListener('click', () => {
+            modelPickerOverlay.classList.add('hidden');
+        });
+        modelPickerOverlay.addEventListener('click', (e) => {
+            if (e.target === modelPickerOverlay) modelPickerOverlay.classList.add('hidden');
+        });
+
+        // Disturbance toggle
+        document.getElementById('btnDisturbance').addEventListener('click', () => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'command', action: 'toggle_disturbance' }));
+            }
+        });
+
+        document.getElementById('btnReset').addEventListener('click', resetSimulation);
+
+        // ========== NOTIFICATION TOAST ==========
+        function showNotification(message) {
+            console.log('Server:', message);
+            // Create a small toast
+            const toast = document.createElement('div');
+            toast.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs px-4 py-2 rounded-lg shadow-xl z-50 pointer-events-none';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+// ========== LOSS CHART ==========
+        const lossCanvas = document.getElementById('lossChart');
+        const lossCtx = lossCanvas.getContext('2d');
+        let lossHistory = [];
+        let startPosition = 'down';
+        const INDIVIDUAL_THRESHOLD = 200;
+        const GROUP_SIZE = 50;
+
+        // Fix canvas resolution
+        function resizeLossChart() {
+            const rect = lossCanvas.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            lossCanvas.width = rect.width * dpr;
+            lossCanvas.height = rect.height * dpr;
+            lossCtx.setTransform(1, 0, 0, 1, 0, 0);
+            lossCtx.scale(dpr, dpr);
+        }
+        resizeLossChart();
+        window.addEventListener('resize', resizeLossChart);
+
+        function getDisplayData() {
+            if (lossHistory.length <= INDIVIDUAL_THRESHOLD) {
+                return {
+                    data: lossHistory,
+                    label: 'Actor Loss'
+                };
+            } else {
+                const grouped = [];
+                for (let i = 0; i < lossHistory.length; i += GROUP_SIZE) {
+                    const chunk = lossHistory.slice(i, i + GROUP_SIZE);
+                    grouped.push(chunk.reduce((a, b) => a + b, 0) / chunk.length);
+                }
+                return {
+                    data: grouped,
+                    label: `Actor Loss (avg/${GROUP_SIZE} gens)`
+                };
+            }
+        }
+
+        function drawLossChart() {
+            const rect = lossCanvas.getBoundingClientRect();
+            const w = rect.width;
+            const h = rect.height;
+            
+            lossCtx.clearRect(0, 0, w, h);
+            
+            const { data: displayHistory, label } = getDisplayData();
+            document.getElementById('lossLabel').textContent = label;
+            
+            if (displayHistory.length < 1) return;
+            
+            if (displayHistory.length === 1) {
+                lossCtx.beginPath();
+                lossCtx.fillStyle = '#f59e0b';
+                lossCtx.arc(w / 2, h / 2, 4, 0, Math.PI * 2);
+                lossCtx.fill();
+                return;
+            }
+            
+            const visibleHistory = displayHistory.slice(-100);
+            
+            const minLoss = Math.min(...visibleHistory);
+            const maxLoss = Math.max(...visibleHistory);
+            const range = maxLoss - minLoss || 0.001;
+            const yMin = minLoss - range * 0.1;
+            const yMax = maxLoss + range * 0.1;
+            const yRange = yMax - yMin;
+            
+            // Grid
+            lossCtx.strokeStyle = 'rgba(255,255,255,0.05)';
+            lossCtx.lineWidth = 1;
+            for (let i = 1; i < 4; i++) {
+                const y = h * i / 4;
+                lossCtx.beginPath();
+                lossCtx.moveTo(0, y);
+                lossCtx.lineTo(w, y);
+                lossCtx.stroke();
+            }
+            
+            // Line
+            lossCtx.beginPath();
+            lossCtx.strokeStyle = '#f59e0b';
+            lossCtx.lineWidth = 2;
+            visibleHistory.forEach((loss, i) => {
+                const x = (i / (visibleHistory.length - 1)) * w;
+                const y = h - ((loss - yMin) / yRange) * (h - 8) - 4;
+                if (i === 0) lossCtx.moveTo(x, y);
+                else lossCtx.lineTo(x, y);
+            });
+            lossCtx.stroke();
+            
+            // Fill
+            lossCtx.beginPath();
+            visibleHistory.forEach((loss, i) => {
+                const x = (i / (visibleHistory.length - 1)) * w;
+                const y = h - ((loss - yMin) / yRange) * (h - 8) - 4;
+                if (i === 0) lossCtx.moveTo(x, y);
+                else lossCtx.lineTo(x, y);
+            });
+            lossCtx.lineTo(w, h);
+            lossCtx.lineTo(0, h);
+            lossCtx.closePath();
+            const gradient = lossCtx.createLinearGradient(0, 0, 0, h);
+            gradient.addColorStop(0, 'rgba(245, 158, 11, 0.3)');
+            gradient.addColorStop(1, 'rgba(245, 158, 11, 0)');
+            lossCtx.fillStyle = gradient;
+            lossCtx.fill();
+        }
+
+        function fmtSteps(n) {
+            if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+            if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k';
+            return String(n);
+        }
+
+        function updateStats(msg) {
+            // Progress
+            document.getElementById('statGeneration').textContent = msg.generation ?? 0;
+            if (msg.totalEpisodes !== undefined)
+                document.getElementById('statEpisodes').textContent = msg.totalEpisodes.toLocaleString();
+            if (msg.totalSteps !== undefined)
+                document.getElementById('statSteps').textContent = fmtSteps(msg.totalSteps);
+
+            // Reward
+            document.getElementById('statAvgReward').textContent = (msg.avgReward || 0).toFixed(1);
+            if (msg.avgEpisodeLen !== undefined)
+                document.getElementById('statEpLen').textContent = msg.avgEpisodeLen.toFixed(1) + 's';
+
+            // Network losses
+            document.getElementById('statActorLoss').textContent = (msg.actorLoss || 0).toFixed(4);
+            document.getElementById('statCriticLoss').textContent = (msg.criticLoss || 0).toFixed(4);
+
+            // Loss chart
+            if (msg.actorLoss !== undefined && msg.actorLoss > 0) {
+                document.getElementById('currentLoss').textContent = msg.actorLoss.toFixed(4);
+                lossHistory.push(msg.actorLoss);
+                drawLossChart();
+            }
+
+            // Disturbance button
+            if (msg.disturbanceEnabled !== undefined) {
+                const btnDisturbance = document.getElementById('btnDisturbance');
+                if (msg.disturbanceEnabled) {
+                    btnDisturbance.textContent = 'Disturbance: ON';
+                    btnDisturbance.classList.add('bg-emerald-600', 'text-white');
+                    btnDisturbance.classList.remove('bg-zinc-800', 'hover:bg-zinc-700', 'text-zinc-400');
+                } else {
+                    btnDisturbance.textContent = 'Disturbance: OFF';
+                    btnDisturbance.classList.remove('bg-emerald-600', 'text-white');
+                    btnDisturbance.classList.add('bg-zinc-800', 'hover:bg-zinc-700', 'text-zinc-400');
+                }
+            }
+
+            // Balance quality
+            if (msg.centeredTime !== undefined) {
+                document.getElementById('statCenteredTime').textContent = msg.centeredTime.toFixed(1) + '%';
+                document.getElementById('centeredBar').style.width = Math.min(msg.centeredTime, 100) + '%';
+            }
+            if (msg.uprightTime !== undefined) {
+                document.getElementById('statUprightTime').textContent = msg.uprightTime.toFixed(1) + '%';
+                document.getElementById('uprightBar').style.width = Math.min(msg.uprightTime, 100) + '%';
+            }
+            if (msg.perfectRate !== undefined) {
+                document.getElementById('statPerfectRate').textContent = msg.perfectRate.toFixed(1) + '%';
+                document.getElementById('perfectBar').style.width = Math.min(msg.perfectRate, 100) + '%';
+            }
+        }
+
+        // Boot
+        initNodes();
+        requestAnimationFrame(loop);
+    </script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+
+# Models — exclude large checkpoints by default.
+# To include a specific model, use: git add -f models/yourmodel.pth
+models/
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Screenshots placeholder (keep folder, ignore actual images if large)
+# Comment out if you want screenshots tracked in git
+# screenshots/*.png
+# screenshots/*.jpg
