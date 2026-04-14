@@ -4,9 +4,9 @@ A real-time pendulum balancing system trained with Proximal Policy Optimization 
 
 ---
 
-![Demo](screenshots/demo.png)
+![Demo](screenshots/demo.gif)
 
-![Training](screenshots/training.png)
+![Training](screenshots/learn.png)
 
 ![Watch](screenshots/watch.png)
 
